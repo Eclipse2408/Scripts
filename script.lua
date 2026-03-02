@@ -1,4 +1,7 @@
-local WindUI = (loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua")))()
+local WindUI = (loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua")))();
+
+-- Translator removido (sistema parou de funcionar)
+local function T(key) return key end;
 
 task.spawn(function()
 	local Players = game:GetService("Players");
@@ -16,7 +19,7 @@ end);
 local Window = WindUI:CreateWindow({
     Title = "TRon Void Hub",
     Author = "By KettyS And MutanoZS",
-    Folder = "TRon Void Hub R6.1",
+    Folder = "TRon Void Hub R6.0",
     Size = UDim2.fromOffset(520, 300),
     Transparent = true,
     Theme = "Dark",
@@ -1063,7 +1066,6 @@ pcall(function()
 	end;
 end);
 
-if game.PlaceId == 2753915549 or game.PlaceId == 4443703170 then
     World1 = true;
 elseif game.PlaceId == 4442272183 or game.PlaceId == 79091703265657 then
     World2 = true;
