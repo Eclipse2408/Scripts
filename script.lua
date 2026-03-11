@@ -6729,12 +6729,16 @@ spawn(function()
 								if v.Name == Mon then
 									if string.find((game:GetService("Players")).LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text, NameMon) then
 										repeat
-											(game:GetService("RunService")).Heartbeat:wait();
+											task.wait(0.15); -- intervalo fixo: nao reinicia tween a 60fps
 											EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 											AutoHaki();
 											PosMon = v.HumanoidRootPart.CFrame;
 											MonFarm = v.Name;
-											TweenPlayer(v.HumanoidRootPart.CFrame * Pos);
+											-- Tween so se longe o suficiente do mob
+											local distToMob = (v.HumanoidRootPart.Position - (game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character.HumanoidRootPart and game.Players.LocalPlayer.Character.HumanoidRootPart.Position or Vector3.new())).Magnitude;
+											if distToMob > 8 then
+												TweenPlayer(v.HumanoidRootPart.CFrame * Pos);
+											end;
 											v.Humanoid.WalkSpeed = 0;
 											v.HumanoidRootPart.Size = Vector3.new(1,1,1);
 											Attack();
@@ -6756,133 +6760,164 @@ end);
 
 -- LOOP 2: BONE FARM - Haunted Castle
 spawn(function()
-	while task.wait() do
-		if _G.EclipseFarm_Bone and _G.EclipseStartFarm then
-			pcall(function()
-				local plr = game.Players.LocalPlayer;
-				local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart");
-				if not hrp then return; end;
-				local QuestUI  = plr.PlayerGui.Main.Quest;
-				local MOBS     = {"Reborn Skeleton","Living Zombie","Demonic Soul","Posessed Mummy"};
-				local npcPos   = CFrame.new(-9516.99, 172.01, 6078.46);
-				-- Vai ao NPC pegar quest
-				if _G.EclipseAcceptQuest and not QuestUI.Visible then
-					if (npcPos.Position - hrp.Position).Magnitude > 5 then
-						TweenPlayer(npcPos);
-					else
-						task.wait(0.5);
-						local quests = {
-							{"StartQuest","HauntedQuest1",1},{"StartQuest","HauntedQuest1",2},
-							{"StartQuest","HauntedQuest2",1},{"StartQuest","HauntedQuest2",2}
-						};
-						(game:GetService("ReplicatedStorage")).Remotes.CommF_:InvokeServer(
-							unpack(quests[math.random(1,#quests)])
-						);
-						task.wait(1);
-					end;
+	while task.wait(0.15) do
+		if not (_G.EclipseFarm_Bone and _G.EclipseStartFarm) then continue; end;
+		pcall(function()
+			local plr = game.Players.LocalPlayer;
+			local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart");
+			if not hrp then return; end;
+			local QuestUI  = plr.PlayerGui.Main.Quest;
+			local MOBS     = {"Reborn Skeleton","Living Zombie","Demonic Soul","Posessed Mummy"};
+			local npcPos   = CFrame.new(-9516.99, 172.01, 6078.46);
+			-- Vai ao NPC pegar quest
+			if _G.EclipseAcceptQuest and not QuestUI.Visible then
+				if (npcPos.Position - hrp.Position).Magnitude > 5 then
+					TweenPlayer(npcPos);
+					-- Aguarda chegar ou timeout (nao reinicia tween a cada frame)
+					local t = 0;
+					repeat task.wait(0.1); t = t + 0.1;
+					until (npcPos.Position - hrp.Position).Magnitude <= 5 or t > 8 or not _G.EclipseFarm_Bone;
 				else
-					local function GetClosestBoneMob()
-						local closest, shortest = nil, math.huge;
-						for _, mobName in pairs(MOBS) do
-							for _, mob in pairs(workspace.Enemies:GetChildren()) do
-								if mob.Name == mobName and mob:FindFirstChild("Humanoid")
-								   and mob.Humanoid.Health > 0 and mob.PrimaryPart then
-									local dist = (mob.PrimaryPart.Position - hrp.Position).Magnitude;
-									if dist < shortest then shortest = dist; closest = mob; end;
-								end;
-							end;
-						end;
-						return closest;
-					end;
-					local mob = GetClosestBoneMob();
-					if mob then
-						TweenPlayer(mob.PrimaryPart.CFrame * Pos);
-						EquipWeapon(_G.Settings.Main["Selected Weapon"]);
-						G.Kill(mob, true);
-					else
-						TweenPlayer(CFrame.new(-9495.68, 453.58, 5977.34));
+					local quests = {
+						{"StartQuest","HauntedQuest1",1},{"StartQuest","HauntedQuest1",2},
+						{"StartQuest","HauntedQuest2",1},{"StartQuest","HauntedQuest2",2}
+					};
+					(game:GetService("ReplicatedStorage")).Remotes.CommF_:InvokeServer(
+						unpack(quests[math.random(1,#quests)])
+					);
+					task.wait(1);
+				end;
+				return;
+			end;
+			-- Acha o mob mais proximo
+			local closest, shortest = nil, math.huge;
+			for _, mobName in pairs(MOBS) do
+				for _, mob in pairs(workspace.Enemies:GetChildren()) do
+					if mob.Name == mobName and mob:FindFirstChild("Humanoid")
+					   and mob.Humanoid.Health > 0 and mob.PrimaryPart then
+						local dist = (mob.PrimaryPart.Position - hrp.Position).Magnitude;
+						if dist < shortest then shortest = dist; closest = mob; end;
 					end;
 				end;
-			end);
-		end;
+			end;
+			if closest then
+				local targetCF = closest.PrimaryPart.CFrame * Pos;
+				-- Tween so se estiver longe o suficiente (evita restart desnecessario)
+				if (targetCF.Position - hrp.Position).Magnitude > 8 then
+					TweenPlayer(targetCF);
+					-- Espera chegar perto antes de atacar
+					local t = 0;
+					repeat task.wait(0.05); t = t + 0.05;
+					until (closest.PrimaryPart.Position - hrp.Position).Magnitude <= 25
+						or t > 5
+						or not (closest.Parent and closest:FindFirstChild("Humanoid") and closest.Humanoid.Health > 0)
+						or not _G.EclipseFarm_Bone;
+				end;
+				EquipWeapon(_G.Settings.Main["Selected Weapon"]);
+				if closest.Parent and closest:FindFirstChild("Humanoid") and closest.Humanoid.Health > 0 then
+					G.Kill(closest, true);
+				end;
+			else
+				-- Sem mob: vai para spawn area do Haunted Castle
+				local spawnCF = CFrame.new(-9495.68, 453.58, 5977.34);
+				if (spawnCF.Position - hrp.Position).Magnitude > 20 then
+					TweenPlayer(spawnCF);
+					local t = 0;
+					repeat task.wait(0.1); t = t + 0.1;
+					until (spawnCF.Position - hrp.Position).Magnitude <= 20 or t > 10 or not _G.EclipseFarm_Bone;
+				end;
+			end;
+		end);
 	end;
 end);
 
 -- LOOP 3: CAKE PRINCE FARM
 spawn(function()
-	while task.wait() do
-		if _G.EclipseFarm_Cake and _G.EclipseStartFarm then
-			pcall(function()
-				local plr     = game.Players.LocalPlayer;
-				local hrp     = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart");
-				if not hrp then return; end;
-				local enemies = workspace:FindFirstChild("Enemies");
-				if not enemies then return; end;
-				local CakePos       = CFrame.new(-2091.91, 70.00, -12142.83);
-				local PortalEntrance= CFrame.new(-2151.82, 149.32, -12404.91);
-				local mirror        = workspace.Map:FindFirstChild("CakeLoaf");
-				mirror = mirror and mirror:FindFirstChild("BigMirror");
-				local other         = mirror and mirror:FindFirstChild("Other");
-				local portalOpen    = other and other.Transparency == 0;
-				local boss          = enemies:FindFirstChild("Cake Prince") or enemies:FindFirstChild("Dough King");
-				if not boss and not portalOpen
-				   and (hrp.Position - CakePos.Position).Magnitude > 3000 then
-					TweenPlayer(CakePos); return;
-				end;
-				if boss or portalOpen then
-					if boss and boss:FindFirstChild("Humanoid") and boss.Humanoid.Health > 0 and boss.PrimaryPart then
-						TweenPlayer(boss.PrimaryPart.CFrame * CFrame.new(0, 25, 0));
-						EquipWeapon(_G.Settings.Main["Selected Weapon"]);
-						G.Kill(boss, true);
-						return;
+	while task.wait(0.15) do
+		if not (_G.EclipseFarm_Cake and _G.EclipseStartFarm) then continue; end;
+		pcall(function()
+			local plr     = game.Players.LocalPlayer;
+			local hrp     = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart");
+			if not hrp then return; end;
+			local enemies = workspace:FindFirstChild("Enemies");
+			if not enemies then return; end;
+			local CakePos       = CFrame.new(-2091.91, 70.00, -12142.83);
+			local PortalEntrance= CFrame.new(-2151.82, 149.32, -12404.91);
+			local mirror        = workspace.Map:FindFirstChild("CakeLoaf");
+			mirror = mirror and mirror:FindFirstChild("BigMirror");
+			local other         = mirror and mirror:FindFirstChild("Other");
+			local portalOpen    = other and other.Transparency == 0;
+			local boss          = enemies:FindFirstChild("Cake Prince") or enemies:FindFirstChild("Dough King");
+			if not boss and not portalOpen
+			   and (hrp.Position - CakePos.Position).Magnitude > 3000 then
+				TweenPlayer(CakePos);
+				local t = 0;
+				repeat task.wait(0.1); t = t + 0.1;
+				until (hrp.Position - CakePos.Position).Magnitude <= 3000 or t > 15 or not _G.EclipseFarm_Cake;
+				return;
+			end;
+			if boss or portalOpen then
+				if boss and boss:FindFirstChild("Humanoid") and boss.Humanoid.Health > 0 and boss.PrimaryPart then
+					local bossTarget = boss.PrimaryPart.CFrame * CFrame.new(0, 25, 0);
+					if (bossTarget.Position - hrp.Position).Magnitude > 8 then
+						TweenPlayer(bossTarget);
+						local t = 0;
+						repeat task.wait(0.05); t = t + 0.05;
+						until (bossTarget.Position - hrp.Position).Magnitude <= 30 or t > 6 or not _G.EclipseFarm_Cake;
 					end;
-					if (hrp.Position - PortalEntrance.Position).Magnitude < 500 then
-						TpConditional(hrp, PortalEntrance, TP_DIST_THRESHOLD);
-					end;
+					EquipWeapon(_G.Settings.Main["Selected Weapon"]);
+					G.Kill(boss, true);
 					return;
 				end;
-				local CAKE_MOBS = {"Cookie Crafter","Cake Guard","Baking Staff","Head Baker"};
-				if _G.EclipseAcceptQuest and not plr.PlayerGui.Main.Quest.Visible then
-					local questPos = CFrame.new(-1927.92, 37.80, -12842.54);
-					TpConditional(hrp, questPos, TP_DIST_THRESHOLD);
-					if (hrp.Position - questPos.Position).Magnitude <= 40 then
-						local q = {
-							{"StartQuest","CakeQuest2",2},{"StartQuest","CakeQuest2",1},
-							{"StartQuest","CakeQuest1",1},{"StartQuest","CakeQuest1",2}
-						};
-						(game:GetService("ReplicatedStorage")).Remotes.CommF_:InvokeServer(
-							unpack(q[math.random(1,4)])
-						);
-					end;
-					return;
+				if (hrp.Position - PortalEntrance.Position).Magnitude < 500 then
+					TpConditional(hrp, PortalEntrance, TP_DIST_THRESHOLD);
 				end;
-				local bestMob, bestDist = nil, math.huge;
-				for _, mob in ipairs(enemies:GetChildren()) do
-					if table.find(CAKE_MOBS, mob.Name) and mob:FindFirstChild("Humanoid")
-					   and mob.Humanoid.Health > 0 then
-						local dist = (mob.HumanoidRootPart.Position - hrp.Position).Magnitude;
-						if dist < bestDist then bestDist = dist; bestMob = mob; end;
-					end;
+				return;
+			end;
+			local CAKE_MOBS = {"Cookie Crafter","Cake Guard","Baking Staff","Head Baker"};
+			if _G.EclipseAcceptQuest and not plr.PlayerGui.Main.Quest.Visible then
+				local questPos = CFrame.new(-1927.92, 37.80, -12842.54);
+				TpConditional(hrp, questPos, TP_DIST_THRESHOLD);
+				if (hrp.Position - questPos.Position).Magnitude <= 40 then
+					local q = {
+						{"StartQuest","CakeQuest2",2},{"StartQuest","CakeQuest2",1},
+						{"StartQuest","CakeQuest1",1},{"StartQuest","CakeQuest1",2}
+					};
+					(game:GetService("ReplicatedStorage")).Remotes.CommF_:InvokeServer(
+						unpack(q[math.random(1,4)])
+					);
 				end;
-				if bestMob then
-					repeat
-						task.wait();
-						if enemies:FindFirstChild("Cake Prince") or
-						   (workspace.Map.CakeLoaf.BigMirror.Other.Transparency == 0) then
-							break;
-						end;
-						if bestMob.Parent and bestMob.Humanoid.Health > 0 then
-							TweenPlayer(bestMob.HumanoidRootPart.CFrame * CFrame.new(0, 20, 0));
-							EquipWeapon(_G.Settings.Main["Selected Weapon"]);
-							G.Kill(bestMob, true);
-						else break; end;
-					until not _G.EclipseStartFarm or not _G.EclipseFarm_Cake
-						  or not bestMob.Parent or bestMob.Humanoid.Health <= 0;
-				else
-					TpConditional(hrp, CFrame.new(-1927.92, 37.80, -12842.54), TP_DIST_THRESHOLD);
+				return;
+			end;
+			local bestMob, bestDist = nil, math.huge;
+			for _, mob in ipairs(enemies:GetChildren()) do
+				if table.find(CAKE_MOBS, mob.Name) and mob:FindFirstChild("Humanoid")
+				   and mob.Humanoid.Health > 0 then
+					local dist = (mob.HumanoidRootPart.Position - hrp.Position).Magnitude;
+					if dist < bestDist then bestDist = dist; bestMob = mob; end;
 				end;
-			end);
-		end;
+			end;
+			if bestMob then
+				local mobTarget = bestMob.HumanoidRootPart.CFrame * CFrame.new(0, 20, 0);
+				-- Tween so se longe o suficiente
+				if (mobTarget.Position - hrp.Position).Magnitude > 8 then
+					TweenPlayer(mobTarget);
+					local t = 0;
+					repeat task.wait(0.05); t = t + 0.05;
+					until (bestMob.HumanoidRootPart.Position - hrp.Position).Magnitude <= 25
+						or t > 5
+						or not (bestMob.Parent and bestMob.Humanoid.Health > 0)
+						or enemies:FindFirstChild("Cake Prince")
+						or not _G.EclipseFarm_Cake;
+				end;
+				if bestMob.Parent and bestMob.Humanoid.Health > 0 then
+					EquipWeapon(_G.Settings.Main["Selected Weapon"]);
+					G.Kill(bestMob, true);
+				end;
+			else
+				TpConditional(hrp, CFrame.new(-1927.92, 37.80, -12842.54), TP_DIST_THRESHOLD);
+			end;
+		end);
 	end;
 end);
 
@@ -7279,7 +7314,7 @@ spawn(function()
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 								if v.Name == Mon then
 									repeat
-										(game:GetService("RunService")).Heartbeat:wait();
+										task.wait(0.15);
 										EquipWeapon(_G.Settings.Main["Selected Mastery Sword"]);
 										Attack();
 										TweenPlayer(v.HumanoidRootPart.CFrame * Pos);
@@ -7308,7 +7343,7 @@ spawn(function()
 					for i, v in pairs(game.Workspace.Enemies:GetChildren()) do
 						if v.Name == Mon and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 							repeat
-								(game:GetService("RunService")).Heartbeat:wait();
+								task.wait(0.15);
 								EquipWeapon(_G.Settings.Main["Selected Mastery Sword"]);
 								Attack();
 								TweenPlayer(v.HumanoidRootPart.CFrame * Pos);
@@ -7335,7 +7370,7 @@ spawn(function()
 						if v.Name == "Reborn Skeleton" or v.Name == "Living Zombie" or v.Name == "Demonic Soul" or v.Name == "Posessed Mummy" then
 							if v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									EquipWeapon(_G.Settings.Main["Selected Mastery Sword"]);
 									Attack();
 									TweenPlayer(v.HumanoidRootPart.CFrame * Pos);
@@ -7363,7 +7398,7 @@ spawn(function()
 						if v.Name == "Cookie Crafter" or v.Name == "Cake Guard" or v.Name == "Baking Staff" or v.Name == "Head Baker" then
 							if v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									EquipWeapon(_G.Settings.Main["Selected Mastery Sword"]);
 									Attack();
 									TweenPlayer(v.HumanoidRootPart.CFrame * Pos);
@@ -7388,7 +7423,7 @@ spawn(function()
 					if v.Name and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 						if (game.Players.LocalPlayer.Character.HumanoidRootPart.Position - (v:FindFirstChild("HumanoidRootPart")).Position).Magnitude <= 2000 then
 							repeat
-								(game:GetService("RunService")).Heartbeat:wait();
+								task.wait(0.15);
 								EquipWeapon(_G.Settings.Main["Selected Mastery Sword"]);
 								Attack();
 								TweenPlayer(v.HumanoidRootPart.CFrame * Pos);
@@ -7418,7 +7453,7 @@ spawn(function()
 						for i, v in pairs((game:GetService("Workspace")).Enemies:GetChildren()) do
 							if v.Name == selectBoss and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									EquipWeapon(_G.Settings.Main["Selected Mastery Sword"]);
 									Attack();
 									TweenPlayer(v.HumanoidRootPart.CFrame * Pos);
@@ -7455,7 +7490,7 @@ spawn(function()
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 								if v.Name == Mon then
 									repeat
-										(game:GetService("RunService")).Heartbeat:wait();
+										task.wait(0.15);
 										if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 											EquipWeapon((game:GetService("Players")).LocalPlayer.Data.DevilFruit.Value);
 											TweenPlayer(v.HumanoidRootPart.CFrame * CFrame.new(0, 25, 0) * CFrame.Angles(math.rad((-90)), 0, 0));
@@ -7498,7 +7533,7 @@ spawn(function()
 					for i, v in pairs(game.Workspace.Enemies:GetChildren()) do
 						if v.Name == Mon and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 							repeat
-								(game:GetService("RunService")).Heartbeat:wait();
+								task.wait(0.15);
 								if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 									EquipWeapon((game:GetService("Players")).LocalPlayer.Data.DevilFruit.Value);
 									UseSkill = true;
@@ -7538,7 +7573,7 @@ spawn(function()
 						if v.Name == "Reborn Skeleton" or v.Name == "Living Zombie" or v.Name == "Demonic Soul" or v.Name == "Posessed Mummy" then
 							if v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 										EquipWeapon((game:GetService("Players")).LocalPlayer.Data.DevilFruit.Value);
 										UseSkill = true;
@@ -7578,7 +7613,7 @@ spawn(function()
 						if v.Name == "Cookie Crafter" or v.Name == "Cake Guard" or v.Name == "Baking Staff" or v.Name == "Head Baker" then
 							if v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 										EquipWeapon((game:GetService("Players")).LocalPlayer.Data.DevilFruit.Value);
 										UseSkill = true;
@@ -7615,7 +7650,7 @@ spawn(function()
 					if v.Name and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 						if (game.Players.LocalPlayer.Character.HumanoidRootPart.Position - (v:FindFirstChild("HumanoidRootPart")).Position).Magnitude <= 2000 then
 							repeat
-								(game:GetService("RunService")).Heartbeat:wait();
+								task.wait(0.15);
 								if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 									EquipWeapon((game:GetService("Players")).LocalPlayer.Data.DevilFruit.Value);
 									TweenPlayer(v.HumanoidRootPart.CFrame * CFrame.new(0, 25, 0) * CFrame.Angles(math.rad((-90)), 0, 0));
@@ -7657,7 +7692,7 @@ spawn(function()
 						for i, v in pairs((game:GetService("Workspace")).Enemies:GetChildren()) do
 							if v.Name == selectBoss and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 										EquipWeapon((game:GetService("Players")).LocalPlayer.Data.DevilFruit.Value);
 										TweenPlayer(v.HumanoidRootPart.CFrame * CFrame.new(0, 25, 0) * CFrame.Angles(math.rad((-90)), 0, 0));
@@ -7709,7 +7744,7 @@ spawn(function()
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 								if v.Name == Mon then
 									repeat
-										(game:GetService("RunService")).Heartbeat:wait();
+										task.wait(0.15);
 										if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 											EquipWeapon(SelectWeaponGun);
 											local ShootPosition = (game:GetService("Players")).LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, (-15), 0);
@@ -7753,7 +7788,7 @@ spawn(function()
 					for i, v in pairs(game.Workspace.Enemies:GetChildren()) do
 						if v.Name == Mon and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 							repeat
-								(game:GetService("RunService")).Heartbeat:wait();
+								task.wait(0.15);
 								if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 									local ShootPosition = (game:GetService("Players")).LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, (-15), 0);
 									((game:GetService("Players")).LocalPlayer.Character.Humanoid:FindFirstChild("")):InvokeServer("TAP", Vector3.new(ShootPosition.Position));
@@ -7794,7 +7829,7 @@ spawn(function()
 						if v.Name == "Reborn Skeleton" or v.Name == "Living Zombie" or v.Name == "Demonic Soul" or v.Name == "Posessed Mummy" then
 							if v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 										EquipWeapon(SelectWeaponGun);
 										local ShootPosition = (game:GetService("Players")).LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, (-15), 0);
@@ -7836,7 +7871,7 @@ spawn(function()
 						if v.Name == "Cookie Crafter" or v.Name == "Cake Guard" or v.Name == "Baking Staff" or v.Name == "Head Baker" then
 							if v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 										EquipWeapon(SelectWeaponGun);
 										local ShootPosition = (game:GetService("Players")).LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, (-15), 0);
@@ -7875,7 +7910,7 @@ spawn(function()
 					if v.Name and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 						if (game.Players.LocalPlayer.Character.HumanoidRootPart.Position - (v:FindFirstChild("HumanoidRootPart")).Position).Magnitude <= 2000 then
 							repeat
-								(game:GetService("RunService")).Heartbeat:wait();
+								task.wait(0.15);
 								if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 									EquipWeapon(SelectWeaponGun);
 									local ShootPosition = (game:GetService("Players")).LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, (-15), 0);
@@ -7920,7 +7955,7 @@ spawn(function()
 						for i, v in pairs((game:GetService("Workspace")).Enemies:GetChildren()) do
 							if v.Name == selectBoss and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									if v.Humanoid.Health <= v.Humanoid.MaxHealth * _G.Settings.Setting["Mastery Health"] / 100 then
 										EquipWeapon(SelectWeaponGun);
 										local ShootPosition = (game:GetService("Players")).LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, (-15), 0);
@@ -8079,7 +8114,7 @@ spawn(function()
 						if v.Name == _G.Settings.Main["Selected Mon"] then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -8185,7 +8220,7 @@ spawn(function()
 						if v.Name == _G.Settings.Main["Selected Boss"] then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -8222,7 +8257,7 @@ spawn(function()
 							if v.Name == boss then
 								if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 									repeat
-										(game:GetService("RunService")).Heartbeat:wait();
+										task.wait(0.15);
 										AutoHaki();
 										EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 										v.Humanoid.WalkSpeed = 0;
@@ -8350,7 +8385,7 @@ spawn(function()
 							if getPirateRaidEnemies() then
 								if (game.Players.LocalPlayer.Character.HumanoidRootPart.Position - (v:FindFirstChild("HumanoidRootPart")).Position).Magnitude <= 2000 then
 									repeat
-										(game:GetService("RunService")).Heartbeat:wait();
+										task.wait(0.15);
 										Attack();
 										AutoHaki();
 										EquipWeapon(_G.Settings.Main["Selected Weapon"]);
@@ -9169,7 +9204,7 @@ spawn(function()
 							if v.Name == "Cake Prince" then
 								if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 									repeat
-										(game:GetService("RunService")).Heartbeat:wait();
+										task.wait(0.15);
 										AutoHaki();
 										EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 										v.Humanoid.WalkSpeed = 0;
@@ -9189,7 +9224,7 @@ spawn(function()
 						if v.Name == "Cookie Crafter" or v.Name == "Cake Guard" or v.Name == "Baking Staff" or v.Name == "Head Baker" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -9239,7 +9274,7 @@ spawn(function()
 						if v.Name == "Cake Prince" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -9270,7 +9305,7 @@ spawn(function()
 						if v.Name == "Dough King" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -9437,7 +9472,7 @@ spawn(function()
 							if v.Name == mon then
 								if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 									repeat
-										(game:GetService("RunService")).Heartbeat:wait();
+										task.wait(0.15);
 										AutoHaki();
 										EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 										PosMon = v.HumanoidRootPart.CFrame;
@@ -10247,7 +10282,7 @@ spawn(function()
 								if v.Name == "rip_indra" then
 									OldCFrameThird = v.HumanoidRootPart.CFrame;
 									repeat
-										(game:GetService("RunService")).Heartbeat:wait();
+										task.wait(0.15);
 										AutoHaki();
 										EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 										TweenPlayer(v.HumanoidRootPart.CFrame * Pos);
@@ -10297,7 +10332,7 @@ spawn(function()
 										if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 											OldCFrameSecond = v.HumanoidRootPart.CFrame;
 											repeat
-												(game:GetService("RunService")).Heartbeat:wait();
+												task.wait(0.15);
 												AutoHaki();
 												EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 												v.Humanoid.WalkSpeed = 0;
@@ -10495,7 +10530,7 @@ spawn(function()
 								if v.Name == Ms then
 									OldCFrameShark = v.HumanoidRootPart.CFrame;
 									repeat
-										(game:GetService("RunService")).Heartbeat:wait();
+										task.wait(0.15);
 										AutoHaki();
 										EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 										v.Humanoid.WalkSpeed = 0;
@@ -10543,7 +10578,7 @@ spawn(function()
 					if (game:GetService("Players")).LocalPlayer.Backpack:FindFirstChild("Electro") or (game:GetService("Players")).LocalPlayer.Character:FindFirstChild("Electro") and ((game:GetService("Players")).LocalPlayer.Backpack:FindFirstChild("Electro")).Level.Value >= 400 or ((game:GetService("Players")).LocalPlayer.Character:FindFirstChild("Electro")).Level.Value >= 400 then
 						if _G.Settings.Main["Auto Farm"] == false then
 							repeat
-								(game:GetService("RunService")).Heartbeat:wait();
+								task.wait(0.15);
 								TweenPlayer(CFrame.new(-10371.4717, 330.764496, -10131.4199));
 							until not _G.Settings.Items["Auto Electric Claw"] or ((game:GetService("Players")).LocalPlayer.Character.HumanoidRootPart.Position - (CFrame.new((-10371.4717), 330.764496, (-10131.4199))).Position).Magnitude <= 10;
 							(game:GetService("ReplicatedStorage")).Remotes.CommF_:InvokeServer("BuyElectricClaw", "Start");
@@ -10740,7 +10775,7 @@ spawn(function()
 									if (game:GetService("Workspace")).Enemies:FindFirstChild("Mob Leader [Lv. 120] [Boss]") then
 										if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 											repeat
-												(game:GetService("RunService")).Heartbeat:wait();
+												task.wait(0.15);
 												AutoHaki();
 												EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 												v.Humanoid.WalkSpeed = 0;
@@ -10768,7 +10803,7 @@ spawn(function()
 						if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 							if v.Name == "Saber Expert" then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									TweenPlayer(v.HumanoidRootPart.CFrame * Pos);
 									v.HumanoidRootPart.Size = Vector3.new(1, 1, 1);
@@ -10809,7 +10844,7 @@ spawn(function()
 						if v.Name == "Cake Queen" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -11203,7 +11238,7 @@ spawn(function()
 					for i, v in pairs((game:GetService("Workspace")).Enemies:GetChildren()) do
 						if (v.Name == "Snow Lurker" or v.Name == "Arctic Warrior") and v.Humanoid.Health > 0 then
 							repeat
-								(game:GetService("RunService")).Heartbeat:wait();
+								task.wait(0.15);
 								EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 								AutoHaki();
 								v.HumanoidRootPart.Size = Vector3.new(1, 1, 1);
@@ -11439,7 +11474,7 @@ spawn(function()
 					for i, v in pairs((game:GetService("Workspace")).Enemies:GetChildren()) do
 						if v.Name == ("rip_indra True Form" or v.Name == "rip_indra") and v.Humanoid.Health > 0 and v:IsA("Model") and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
 							repeat
-								(game:GetService("RunService")).Heartbeat:wait();
+								task.wait(0.15);
 								AutoHaki();
 								EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 								v.HumanoidRootPart.Size = Vector3.new(1, 1, 1);
@@ -11642,7 +11677,7 @@ spawn(function()
 						if v.Name == "Thunder God" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -11670,7 +11705,7 @@ spawn(function()
 						if v.Name == "The Saw" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -11698,7 +11733,7 @@ spawn(function()
 						if v.Name == "Greybeard" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -11726,7 +11761,7 @@ spawn(function()
 						if v.Name == "Tide Keeper" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -11844,7 +11879,7 @@ spawn(function()
 						if v.Name == "Diablo" or v.Name == "Deandre" or v.Name == "Urban" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -11871,7 +11906,7 @@ spawn(function()
 						if v.Name == "Chief Warden" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -11898,7 +11933,7 @@ spawn(function()
 					for i, v in pairs((game:GetService("Workspace")).Enemies:GetChildren()) do
 						if string.find(v.Name, "Soul Reaper") then
 							repeat
-								(game:GetService("RunService")).Heartbeat:wait();
+								task.wait(0.15);
 								EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 								AutoHaki();
 								v.HumanoidRootPart.Size = Vector3.new(1, 1, 1);
@@ -12296,7 +12331,7 @@ spawn(function()
 						for h, i in pairs((game:GetService("Workspace")).Enemies:GetChildren()) do
 							if i.Name == "Order" then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									Attack();
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
@@ -12443,7 +12478,7 @@ spawn(function()
 						if v.Name == "Cocoa Warrior" or v.Name == "Chocolate Bar Battler" or v.Name == "Sweet Thief" or v.Name == "Candy Rebel" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -13481,7 +13516,7 @@ spawn(function()
 						if (v.Character.HumanoidRootPart.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude <= 500 then
 							if v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:Wait();
+									task.wait(0.15);
 									EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 									AutoHaki();
 									TweenPlayer(v.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 40));
@@ -14483,7 +14518,7 @@ function autoKillVenemousAssailant()
 			if v.Name == "Venomous Assailant" then
 				if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 					repeat
-						(game:GetService("RunService")).Heartbeat:wait();
+						task.wait(0.15);
 						AutoHaki();
 						EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 						v.Humanoid.WalkSpeed = 0;
@@ -14506,7 +14541,7 @@ function autoKillHydraEnforcer()
 			if v.Name == "Hydra Enforcer" then
 				if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 					repeat
-						(game:GetService("RunService")).Heartbeat:wait();
+						task.wait(0.15);
 						AutoHaki();
 						EquipWeapon(_G.Settings.Main["Selected Weapon"]);
 						v.Humanoid.WalkSpeed = 0;
@@ -15313,7 +15348,7 @@ spawn(function()
 						if v.Name == "Lava Golem" then
 							if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
 								repeat
-									(game:GetService("RunService")).Heartbeat:wait();
+									task.wait(0.15);
 									AutoHaki();
 									EquipWeapon(_G.Settings.SeaStack["Selected Weapon"]);
 									v.Humanoid.WalkSpeed = 0;
@@ -16012,7 +16047,7 @@ spawn(function()
 					for i, v in pairs((game:GetService("Workspace")).SeaBeasts:GetChildren()) do
 						if CheckSeaBeast() then
 							repeat
-								(game:GetService("RunService")).Heartbeat:wait();
+								task.wait(0.15);
 								CFrameSeaBeast = v.HumanoidRootPart.CFrame * CFrame.new(0, 200, 0);
 								if (CFrameSeaBeast.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame.Position).Magnitude <= 400 then
 									_G.SeaSkill = true;
